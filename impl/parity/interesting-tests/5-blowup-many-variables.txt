@@ -1,0 +1,28 @@
+# Test 5 (weakness: cost).  The disjunctive domain enumerates all vectors in
+# {Z,E,O}^|Var|; with 9 unconstrained variables that is 3^9 = 19683 vectors per
+# node.  The program is still analysed in well under a second, but the exponential
+# dependence on the number of variables is the price paid for relational
+# precision.  (--domain=pointwise handles it instantly, and even proves the
+# assertions here, because they only involve one variable each.)
+a b c d e f g h i
+
+L0 a := ?           L1
+L1 b := ?           L2
+L2 c := ?           L3
+L3 d := ?           L4
+L4 e := ?           L5
+L5 f := ?           L6
+L6 g := ?           L7
+L7 h := ?           L8
+L8 i := ?           L9
+L9 assume(a != b)   L10
+L9 assume(a = b)    L11
+L10 a := b + 1      L11
+L11 i := a - 1      L12
+L12 i := i + 1      L13
+L13 assume(a != 0)  L14
+L14 assert (EVEN a EVEN i) (ODD a ODD i)  L15
+L15 assume(TRUE)    L16
+L15 assume(TRUE)    L9
+L16 c := 4          L17
+L17 assert (EVEN c) L18

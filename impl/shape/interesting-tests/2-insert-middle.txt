@@ -1,0 +1,53 @@
+# Test 2 (strength: materialisation inside a summarised segment + parity of segments).
+# Builds a list of even length (two cells per iteration), walks a cursor c to an
+# arbitrary position, and inserts a new cell t after c.  The analysis materialises
+# the cell after c out of the summary edge and proves:
+#   * the list stays acyclic and unshared, and no NULL is dereferenced,
+#   * t = c.n and u = t.n (u may be NULL),
+#   * the segments x..c and x..u have the same parity (u is two cells after c),
+#     and x..c and x..t have opposite parities -- relations between path lengths,
+#   * after walking e to the last cell, the whole list has an odd number of
+#     cells (an even number of cells plus the inserted one).
+x c t u e
+
+L0 x := NULL           L1
+L1 t := new            L2
+L2 t.n := x            L3
+L3 x := t              L4
+L4 t := new            L5
+L5 t.n := x            L6
+L6 x := t              L7
+L7 assume(TRUE)        L1
+L7 assume(TRUE)        L8
+
+# walk c to an arbitrary cell
+L8 c := x              L9
+L9 assume(TRUE)        L12
+L9 assume(TRUE)        L10
+L10 u := c.n           L11
+L11 assume(u = NULL)   L12
+L11 assume(u != NULL)  L13
+L13 c := u             L9
+
+# insert t after c
+L12 u := c.n           L14
+L14 t := new           L15
+L15 t.n := NULL        L16
+L16 c.n := NULL        L17
+L17 c.n := t           L18
+L18 t.n := u           L19
+
+L19 assert (t = c.n)                              L20
+L20 assert (u = t.n)                              L21
+L21 assert (LS x t)                               L22
+L22 assert (u = NULL) (LS x u)                    L23
+L23 assert (u = NULL) (ODD x c ODD x u) (EVEN x c EVEN x u)   L24
+L24 assert (ODD x c EVEN x t) (EVEN x c ODD x t)  L25
+
+# walk e to the last cell and check the total length is odd
+L25 e := x             L26
+L26 u := e.n           L27
+L27 assume(u != NULL)  L28
+L27 assume(u = NULL)   L29
+L28 e := u             L26
+L29 assert (ODD x e)   L30

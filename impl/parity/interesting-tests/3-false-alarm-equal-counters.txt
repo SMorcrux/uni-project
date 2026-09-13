@@ -1,0 +1,17 @@
+# Test 3 (weakness: only parity is tracked, not equality).
+# i and j start equal and are decremented together, so at the exit (i = 0) we
+# also have j = 0 and therefore k = j - 1 = 0 is even.  The analysis cannot
+# prove it: it only knows that i and j have the same parity, so at the exit it
+# knows j in {Z, E}, and E - 1 is odd.  This is a genuine false alarm caused by
+# the abstraction (the assertion never fails at run time).
+i j k
+
+L0 i := ?            L1
+L1 j := i            L2
+L2 assume(i != 0)    L3
+L2 assume(i = 0)     L6
+L3 i := i - 1        L4
+L4 j := j - 1        L2
+L6 assert (EVEN j)   L7
+L7 k := j - 1        L8
+L8 assert (EVEN k)   L9

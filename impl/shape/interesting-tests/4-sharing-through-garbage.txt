@@ -1,0 +1,23 @@
+# Test 4 (strength: sharing is detected even when the other pointer to the cell
+# comes from a cell that is no longer reachable).
+# The head of the list x is dropped by  x := x.n.  The old head cell is garbage,
+# but its n-field still points to the new head.  Linking a fresh cell y in front
+# of the new head (y.n := x) therefore creates a shared cell.  The analysis
+# keeps, for every cell, a flag saying whether some unreachable cell points to
+# it ("{x}*" in the output), and reports the violation at the last edge.
+# (Forgetting this flag would make an analysis unsound: it would happily
+# "verify" this program.)
+x y t
+
+L0 t := new            L1
+L1 t.n := x            L2
+L2 x := t              L3
+L3 assume(TRUE)        L0
+L3 assume(TRUE)        L4
+
+L4 t := x.n            L5
+L5 assume(t != NULL)   L6
+L6 x := t              L7
+L7 assert (LS x x)     L8
+L8 y := new            L9
+L9 y.n := x            L10

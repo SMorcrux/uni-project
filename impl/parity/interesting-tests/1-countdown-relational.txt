@@ -1,0 +1,19 @@
+# Test 1 (strength: relational precision).
+# i counts up from 0 while j counts down from n; the loop exits when j = 0.
+# The invariant that makes the assertion true is  parity(i) + parity(j) = parity(n),
+# a *relation* between three variables.  The disjunctive domain P(Var -> {Z,E,O})
+# keeps the correlation between the variables and verifies both assertions.
+# Run with --domain=pointwise to see that the non-relational domain fails
+# (it only knows i,j,n in {Z,E,O} at the loop head).
+n i j k
+
+L0 n := ?           L1
+L1 i := 0           L2
+L2 j := n           L3
+L3 assume(j != 0)   L4
+L3 assume(j = 0)    L7
+L4 i := i + 1       L5
+L5 j := j - 1       L3
+L7 assert (EVEN i EVEN n) (ODD i ODD n)   L8
+L8 k := i + 1       L9
+L9 assert (ODD k EVEN n) (EVEN k ODD n)   L10

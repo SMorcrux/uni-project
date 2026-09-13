@@ -1,22 +1,42 @@
 #!/usr/bin/env python3
 """
-Parity analysis for integer programs (Program Analysis & Verification, final project).
-
 Usage:
-    python3 parity.py PROGRAM.txt [--quiet] [--no-invariants]
+    python3 parity.py PROGRAM.txt [--domain disjunctive|pointwise] [--quiet] [--no-invariants]
 
-The program syntax is the CFG syntax of the project description.
-Lines that are empty or start with '#' or '//' are ignored (comments are an extension).
+Comments (lines starting with # or //) are ignored
 
 The program parses the text into a CFG (class Program),
 then walks along the graph and analyzes the program.
-Since the ATF is monotonic and there's finitely many states, it must terminate.
+Since the ATF is monotonic and there's finitely many states, it must terminate. 
 
 Exit code: 0 if every assertion is verified, 1 if some assertion may be violated, 2 on usage error.
 """
 import sys
 import re
+import itertools
 from collections import defaultdict, deque
+
+# ---------------------------------------------------------------------------
+#  Base partition and helper arithmetic
+# ---------------------------------------------------------------------------
+Z, E, O = 'Z', 'E', 'O'
+B = (Z, E, O)                       # fixed order used for tuples/pretty printing
+BSET = frozenset(B)
+
+def beta(k):
+    """Abstraction of a concrete natural number."""
+    if k == 0:
+        return Z
+    return E if k % 2 == 0 else O
+
+SUCC = {Z: (O,), E: (O,), O: (E,)}          # abstraction of  n + 1
+PRED = {Z: (Z,), E: (O,), O: (Z, E)}        # abstraction of  n - 1  (0 - 1 = 0)
+
+def is_even(b):
+    return b in (Z, E)
+
+def is_odd(b):
+    return b == O
 
 # ---------------------------------------------------------------------------
 #  Program representation / parsing
@@ -132,139 +152,161 @@ def parse_program(src):
     return Program(variables, edges)
 
 # ---------------------------------------------------------------------------
-#  Base partition and helper arithmetic
+#  Abstract domains.  An element of the disjunctive domain is a frozenset of
+#  tuples over B (one entry per program variable, in declaration order).
+#  An element of the pointwise domain is a tuple of frozensets over B.
 # ---------------------------------------------------------------------------
-BOTTOM, EVEN, ODD, TOP = 'Bottom', 'Even', 'Odd', 'Top'
-
-def join_P(a, b):
-    if a == b: return a
-    if a == BOTTOM: return b
-    if b == BOTTOM: return a
-    return TOP
-
-def meet_P(a, b):
-    if a == b: return a
-    if a == TOP: return b
-    if b == TOP: return a
-    return BOTTOM
-
-def beta(k):
-    """Abstraction of a concrete natural number."""
-    return EVEN if k % 2 == 0 else ODD
-
-# ---------------------------------------------------------------------------
-#  Abstract domains
-# ---------------------------------------------------------------------------
-class PointwiseDomain:
-    """Var -> P: the non-relational pointwise lattice using the 4-state domain."""
-    name = 'pointwise'
+class DisjunctiveDomain:
+    """P(Var -> B): sets of 'parity vectors'.  Join = union, bottom = empty set."""
+    name = 'disjunctive'
 
     def __init__(self, variables):
         self.vars = variables
         self.idx = {v: i for i, v in enumerate(variables)}
 
     def top(self):
-        return tuple(TOP for _ in self.vars)
+        return frozenset(itertools.product(B, repeat=len(self.vars)))
 
     def bottom(self):
-        return tuple(BOTTOM for _ in self.vars)
+        return frozenset()
 
     def join(self, a, b):
-        return tuple(join_P(x, y) for x, y in zip(a, b))
+        return a | b
 
     def leq(self, a, b):
-        # a <= b if joining them results in b
-        return self.join(a, b) == b
+        return a <= b
 
     def is_bottom(self, a):
-        return any(x == BOTTOM for x in a)
+        return not a
 
     # --- transfer functions -------------------------------------------------
     def transfer(self, cmd, s):
         """Returns (new_state, list_of_warnings)."""
-        if self.is_bottom(s):
-            return s, []
-
         kind = cmd[0]
         if kind == 'skip':
             return s, []
         if kind == 'havoc':
             i = self.idx[cmd[1]]
-            return s[:i] + (TOP,) + s[i + 1:], []
+            return frozenset(t[:i] + (b,) + t[i + 1:] for t in s for b in B), []
         if kind == 'const':
             i, b = self.idx[cmd[1]], beta(cmd[2])
-            return s[:i] + (b,) + s[i + 1:], []
+            return frozenset(t[:i] + (b,) + t[i + 1:] for t in s), []
         if kind == 'copy':
             i, j = self.idx[cmd[1]], self.idx[cmd[2]]
-            return s[:i] + (s[j],) + s[i + 1:], []
-        if kind == 'inc':
+            return frozenset(t[:i] + (t[j],) + t[i + 1:] for t in s), []
+        if kind in ('inc', 'dec'):
             i, j = self.idx[cmd[1]], self.idx[cmd[2]]
-            b = s[j]
-            if b == EVEN: new_b = ODD
-            elif b == ODD: new_b = EVEN
-            else: new_b = b # TOP or BOTTOM remain identical
-            return s[:i] + (new_b,) + s[i + 1:], []
-        if kind == 'dec':
-            i, j = self.idx[cmd[1]], self.idx[cmd[2]]
-            b = s[j]
-            # Based on project definition: Even - 1 yields TOP (could be 0 -> Even)
-            if b == EVEN: new_b = TOP
-            elif b == ODD: new_b = EVEN
-            else: new_b = b # TOP or BOTTOM remain identical
-            return s[:i] + (new_b,) + s[i + 1:], []
-        
+            f = SUCC if kind == 'inc' else PRED
+            return frozenset(t[:i] + (b,) + t[i + 1:] for t in s for b in f[t[j]]), []
         if kind == 'assume':
-            e = cmd[1]
-            k = e[0]
-            if k == 'true':
-                return s, []
-            if k == 'false':
-                return self.bottom(), []
-            if k == 'cmpv':
-                _, eq, x, y = e
-                # Assume i=j gives new parity information using meet
-                if eq:
-                    ix, iy = self.idx[x], self.idx[y]
-                    new_val = meet_P(s[ix], s[iy])
-                    new_s = list(s)
-                    new_s[ix] = new_val
-                    new_s[iy] = new_val
-                    return tuple(new_s), []
-                # Assume i!=j gives no new information
-                return s, []
-            if k == 'cmpk':
-                _, eq, x, K = e
-                # Assume i=K gives new parity information using meet
-                if eq:
-                    ix = self.idx[x]
-                    new_s = list(s)
-                    new_s[ix] = meet_P(s[ix], beta(K))
-                    return tuple(new_s), []
-                # Assume i!=K gives no new information
-                return s, []
-
+            return frozenset(t for t in s if self.sat_expr(cmd[1], t)), []
         if kind == 'assert':
-            conjs = cmd[1]
-            for conj in conjs:
-                ok = True
-                for (p, x) in conj:
-                    b = s[self.idx[x]]
-                    if (p == 'EVEN' and b != EVEN) or (p == 'ODD' and b != ODD):
-                        ok = False
-                        break
-                if ok:
-                    return s, [] # Validated
-            
-            # If no conjunction holds, throw warning
-            return s, ["assertion may be violated; current state: " + self.fmt(s)]
-
+            bad = [t for t in s if not self.sat_assert(cmd[1], t)]
+            good = frozenset(t for t in s if self.sat_assert(cmd[1], t))
+            warnings = []
+            if bad:
+                warnings.append("assertion may be violated; counter-example parity vectors: "
+                                + ", ".join(self.fmt_tuple(t) for t in sorted(bad)[:4])
+                                + (" ..." if len(bad) > 4 else ""))
+            # Assertions are checked but not used as assumptions, so that a failing
+            # assertion never masks a later one (this is sound: s is a superset of good).
+            return s, warnings
         raise ValueError(kind)
 
+    def sat_expr(self, e, t):
+        """Does the abstract vector t possibly satisfy boolean expression e?  (must be
+        an over-approximation: keep t whenever some concrete state in gamma(t) satisfies e)"""
+        k = e[0]
+        if k == 'true':
+            return True
+        if k == 'false':
+            return False
+        if k == 'cmpk':
+            _, eq, x, K = e
+            bx, bk = t[self.idx[x]], beta(K)
+            if eq:
+                return bx == bk           # x = K  possible iff same class
+            # x != K : impossible only when both are the singleton class {0}
+            return not (bx == Z and bk == Z)
+        if k == 'cmpv':
+            _, eq, x, y = e
+            bx, by = t[self.idx[x]], t[self.idx[y]]
+            if eq:
+                return bx == by
+            return not (bx == Z and by == Z)
+        raise ValueError(k)
+
+    def sat_assert(self, conjs, t):
+        for conj in conjs:
+            ok = True
+            for (p, x) in conj:
+                b = t[self.idx[x]]
+                if (p == 'EVEN' and not is_even(b)) or (p == 'ODD' and not is_odd(b)):
+                    ok = False
+                    break
+            if ok:
+                return True
+        return False
+
     # --- pretty printing ------------------------------------------------------
+    def fmt_tuple(self, t):
+        return "(" + ", ".join("%s:%s" % (v, b) for v, b in zip(self.vars, t)) + ")"
+
+    def fmt(self, s):
+        if not s:
+            return "BOTTOM (unreachable)"
+        n = len(s)
+        # also print a pointwise summary, which is easier to read
+        summary = []
+        for i, v in enumerate(self.vars):
+            cls = sorted({t[i] for t in s}, key=B.index)
+            summary.append("%s in {%s}" % (v, ",".join(cls)))
+        if n == 3 ** len(self.vars):
+            return "TOP (%d vectors)" % n
+        body = "{" + ", ".join(self.fmt_tuple(t) for t in sorted(s)) + "}" if n <= 12 else "(%d vectors)" % n
+        return "%s   pointwise: %s" % (body, "; ".join(summary))
+
+
+class PointwiseDomain(DisjunctiveDomain):
+    """Var -> P(B): the non-relational product lattice.  Transfer functions are the best
+    transformers of this domain, computed by (i) concretising an element to the set of
+    vectors it denotes, (ii) applying the exact disjunctive transformer, (iii) re-abstracting
+    (projecting each variable).  This is exactly alpha o f o gamma."""
+    name = 'pointwise'
+
+    def top(self):
+        return tuple(BSET for _ in self.vars)
+
+    def bottom(self):
+        return tuple(frozenset() for _ in self.vars)
+
+    def join(self, a, b):
+        return tuple(x | y for x, y in zip(a, b))
+
+    def leq(self, a, b):
+        return all(x <= y for x, y in zip(a, b))
+
+    def is_bottom(self, a):
+        return any(not x for x in a)
+
+    def expand(self, a):
+        if self.is_bottom(a):
+            return frozenset()
+        return frozenset(itertools.product(*a))
+
+    def collapse(self, s):
+        if not s:
+            return self.bottom()
+        return tuple(frozenset(t[i] for t in s) for i in range(len(self.vars)))
+
+    def transfer(self, cmd, a):
+        s, w = DisjunctiveDomain.transfer(self, cmd, self.expand(a))
+        return self.collapse(s), w
+
     def fmt(self, a):
         if self.is_bottom(a):
             return "BOTTOM (unreachable)"
-        return "; ".join("%s: %s" % (v, state) for v, state in zip(self.vars, a))
+        return "; ".join("%s in {%s}" % (v, ",".join(sorted(c, key=B.index))) for v, c in zip(self.vars, a))
 
 # ---------------------------------------------------------------------------
 #  Chaotic iteration
@@ -301,8 +343,11 @@ def main(argv):
     if len(args) != 1:
         print(__doc__)
         return 2
+    domain_name = 'disjunctive'
     for o in opts:
-        if o not in ('--quiet', '--no-invariants'):
+        if o.startswith('--domain='):
+            domain_name = o.split('=', 1)[1]
+        elif o not in ('--quiet', '--no-invariants'):
             print("unknown option", o)
             return 2
     quiet = '--quiet' in opts
@@ -312,7 +357,13 @@ def main(argv):
     for n in prog.dangling:
         print("WARNING: node %s has no incoming edges and is not the entry node %s; "
               "the edges leaving it are unreachable (typo in a label?)" % (n, prog.entry))
-    dom = PointwiseDomain(prog.vars)
+    if domain_name == 'disjunctive':
+        dom = DisjunctiveDomain(prog.vars)
+    elif domain_name == 'pointwise':
+        dom = PointwiseDomain(prog.vars)
+    else:
+        print("unknown domain", domain_name)
+        return 2
     state, warnings, iterations = analyze(prog, dom)
     print("Parity analysis of %s  (domain: %s, %d variables, %d nodes, %d edges, entry %s)" %
           (args[0], dom.name, len(prog.vars), len(prog.nodes), len(prog.edges), prog.entry))

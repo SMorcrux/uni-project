@@ -1,0 +1,36 @@
+# Test 1 (strength: destructive updates on a list of unknown length).
+# Builds a non-empty list of arbitrary length in x (h is the first allocated
+# cell, i.e. the last cell of x; f is the head of x), then reverses the list in
+# place into y.  The analysis proves memory safety, that no cycle and no shared
+# cell is ever created (each cell's n-field is reset to NULL before it is
+# re-linked), and the final assertions: x is NULL, y is the reversed list whose
+# head is h and whose last cell is f (f.n = NULL = t), and the parity of the
+# list length is preserved by the reversal (EVEN f h before <=> EVEN y f after).
+x y t h f
+
+# build:  x := h := new;  then repeatedly prepend a fresh cell
+L0 h := new          L1
+L1 x := h            L2
+L2 assume(TRUE)      L3
+L2 assume(TRUE)      L6
+L3 t := new          L4
+L4 t.n := x          L5
+L5 x := t            L2
+
+# reverse
+L6 f := x            L7
+L7 y := NULL         L8
+L8 assume(x != NULL) L9
+L8 assume(x = NULL)  L20
+L9 t := x.n          L10
+L10 x.n := NULL      L11
+L11 x.n := y         L12
+L12 y := x           L13
+L13 x := t           L8
+
+L20 assert (x = NULL)          L21
+L21 assert (y = h)             L22
+L22 assert (LS y f)            L23
+L23 assert (t = f.n)           L24
+L24 assert (NOLS f h) (y = f)  L25
+L25 assert (ODD y f) (EVEN y f) L26

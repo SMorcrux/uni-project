@@ -1,0 +1,32 @@
+# Test 3 (strength: unlinking a cell correctly is verified).
+# Deletes the second cell of a list x of unknown length (>= 2).  The removed
+# cell d is first disconnected (d.n := NULL) and only then is x re-linked to
+# u = d.n.  The analysis proves that no sharing/cycle arises and that afterwards
+# u = x.n, d is no longer reachable from x (NOLS x d), and that x..u is a
+# segment of exactly two cells (EVEN x u) unless u is NULL.
+# If the line 'L8 d.n := NULL L9' is removed, the cell u is pointed to by both
+# x.n and d.n, and the analysis reports the sharing violation at L10.
+x d u t
+
+L0 x := NULL           L1
+L1 t := new            L2
+L2 t.n := x            L3
+L3 x := t              L4
+L4 assume(TRUE)        L1
+L4 assume(TRUE)        L5
+
+L5 d := x.n            L6
+L6 assume(d = NULL)    L99
+L6 assume(d != NULL)   L7
+L7 u := d.n            L8
+L8 d.n := NULL         L9
+L9 x.n := NULL         L10
+L10 x.n := u           L11
+
+L11 assert (u = x.n)               L12
+L12 assert (NOLS x d)              L13
+L13 assert (LS x x)                L14
+L14 assert (u = NULL) (LS x u)     L15
+L15 assert (u = NULL) (EVEN x u)   L16
+
+L99 skip L100

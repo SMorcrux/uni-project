@@ -1,0 +1,29 @@
+# Test 5 (weakness: lengths are abstracted to {1, odd, even}).
+# Two lists of exactly the same length are built in lock step.  They are then
+# traversed in lock step:  while (xx != NULL) { xx := xx.n; yy := yy.n }.
+# This is memory safe, because yy runs out exactly when xx does, but the
+# abstraction records only the parity of each segment, not that the two
+# lengths are equal.  Hence it cannot exclude the case "x has 2 cells and y has
+# 4 cells" (both even) and reports a possible NULL dereference of yy that never
+# happens.  The assertion after the loop is nevertheless verified.
+x y xx yy t
+
+L0 x := NULL            L1
+L1 y := NULL            L2
+L2 t := new             L3
+L3 t.n := x             L4
+L4 x := t               L5
+L5 t := new             L6
+L6 t.n := y             L7
+L7 y := t               L8
+L8 assume(TRUE)         L2
+L8 assume(TRUE)         L9
+
+L9 xx := x              L10
+L10 yy := y             L11
+L11 assume(xx != NULL)  L12
+L11 assume(xx = NULL)   L14
+L12 xx := xx.n          L13
+L13 yy := yy.n          L11
+
+L14 assert (yy = NULL) (LS y yy)   L15

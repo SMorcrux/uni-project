@@ -1,0 +1,22 @@
+# Test 4 (strength: information flows through assume, in both directions).
+# i is incremented twice per iteration, so it stays even.  The loop can only
+# exit when i = n, hence n must be even there, although nothing was ever known
+# about n before.  The second loop copies the parity of i to m by counting m
+# up to i (relational: m = i at exit), and the last assertion relates m and n
+# although they were never compared directly.
+n i m
+
+L0 n := ?             L1
+L1 i := 0             L2
+L2 assume(i != n)     L3
+L2 assume(i = n)      L5
+L3 i := i + 1         L4
+L4 i := i + 1         L2
+L5 assert (EVEN i)    L6
+L6 assert (EVEN n)    L7
+L7 m := 0             L8
+L8 assume(m != i)     L9
+L8 assume(m = i)      L10
+L9 m := m + 1         L8
+L10 assert (EVEN m)   L11
+L11 assert (EVEN m EVEN n)   L12

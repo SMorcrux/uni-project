@@ -1,0 +1,22 @@
+# Test 2 (Failure: the Zero element).  Subtraction saturates at 0 (0 - 1 = 0),
+# so the classic parity lattice {bot, Even, Odd, top} cannot say anything about
+# y - 1 when y is even: it could be 0 - 1 = 0 (even) or 2 - 1 = 1 (odd).
+# Our base partition {Z, E, O} distinguishes 0 from the positive even numbers:
+#   * assume(x != 0) refines x from {Z,E,O} to {E,O},
+#   * (x - 1) + 1 = x  is then provable for x != 0,
+#   * and 0 - 1 = 0 is handled exactly.
+x y z w
+
+L0 x := ?             L1
+L1 assume(x != 0)     L2
+L2 y := x - 1         L3
+L3 y := y + 1         L4
+L4 assert (EVEN x EVEN y) (ODD x ODD y)   L5
+L5 z := 0             L6
+L6 z := z - 1         L7
+L7 assert (EVEN z)    L8
+L8 w := ?             L9
+L9 assume(w = 0)      L10
+L10 w := w - 1        L11
+L11 w := w - 1        L12
+L12 assert (EVEN w)   L13
