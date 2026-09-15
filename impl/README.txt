@@ -7,5 +7,5 @@ Both are single-file Python programs, stdlib only,
 nothing to compile or install. Run the programs with:
 
 --------------------
-python3 parity/parity.py PROGRAM.txt [--domain=disjunctive|pointwise] [--no-invariants] [--quiet]
-python3 shape/shape.py   PROGRAM.txt [--no-invariants] [--quiet] [--max-graphs=N]
+python3 parity.py PROGRAM.txt
+python3 shape.py   PROGRAM.txt

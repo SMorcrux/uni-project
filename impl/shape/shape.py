@@ -1,22 +1,3 @@
-#!/usr/bin/env python3
-"""
-Usage:
-    python3 shape.py PROGRAM.txt [--quiet] [--no-invariants] [--max-graphs=N]
-
-Comments (lines starting with # or //) are ignored
-
-The program parses the text into a CFG (class Program),
-then walks along the graph and analyzes the program.
-Since the ATF is monotonic and there's finitely many states, it must terminate. 
-
-The analysis reports, per control-flow edge,
-   * NULL dereferences        (memory safety),
-   * creation of a cycle      (acyclicity),
-   * creation of a shared node(no node is pointed to by two n-fields), and
-   * assertions that may fail.
-
-Exit code: 0 if the program is verified (no error of any kind), 1 otherwise, 2 on usage error.
-"""
 import sys
 import re
 import itertools
@@ -476,7 +457,7 @@ def transfer_state(cmd, state):
         errors = [errors[0] + "   (%d violating shape graphs in total)" % len(errors)]
     return out, errors
 
-def analyze(prog, max_graphs=None):
+def analyze(prog):
     init = ShapeGraph(prog.vars)             # all variables are NULL initially
     state = {n: {} for n in prog.nodes}
     state[prog.entry] = {init.key(): init}
@@ -492,8 +473,6 @@ def analyze(prog, max_graphs=None):
             for k, g in new.items():
                 if k not in dst:
                     dst[k] = g; changed = True
-            if max_graphs and len(dst) > max_graphs:
-                raise RuntimeError("more than %d shape graphs at node %s" % (max_graphs, e.dst))
             if changed and e.dst not in inwork:
                 inwork.add(e.dst); work.append(e.dst)
     errors = []
@@ -512,38 +491,34 @@ def fmt_state(st):
     return "%d graphs:\n" % len(gs) + "\n".join("            " + g.fmt() for g in gs)
 
 def main(argv):
-    args = [a for a in argv if not a.startswith('--')]
-    opts = [a for a in argv if a.startswith('--')]
-    if len(args) != 1:
+    if len(argv) != 1:
         print(__doc__); return 2
-    max_graphs = None
-    for o in opts:
-        if o.startswith('--max-graphs='):
-            max_graphs = int(o.split('=')[1])
-        elif o not in ('--quiet', '--no-invariants'):
-            print("unknown option", o); return 2
-    show_inv = '--quiet' not in opts and '--no-invariants' not in opts
-    with open(args[0]) as f:
+    
+    with open(argv[0]) as f:
         prog = parse_program(f.read())
     for n in prog.dangling:
         print("WARNING: node %s has no incoming edges and is not the entry node %s; "
               "the edges leaving it are unreachable (typo in a label?)" % (n, prog.entry))
-    state, errors, evals = analyze(prog, max_graphs)
+    
+    state, errors, evals = analyze(prog)
+    
     print("Shape analysis of %s  (%d variables, %d nodes, %d edges, entry %s)" %
-          (args[0], len(prog.vars), len(prog.nodes), len(prog.edges), prog.entry))
-    if show_inv:
-        total = sum(len(s) for s in state.values())
-        print("\nInvariants at the fixpoint (%d edge evaluations, %d shape graphs in total)." % (evals, total))
-        print("Notation: {vars}* marks a cell pointed to by the n-field of a garbage cell; "
-              "-1-> one step, -O-> odd (>=3) steps, -E-> even (>=2) steps, -1|O-> one or odd steps.")
-        for n in prog.nodes:
-            print("  %-6s %s" % (n + ':', fmt_state(state[n])))
+          (argv[0], len(prog.vars), len(prog.nodes), len(prog.edges), prog.entry))
+    
+    total = sum(len(s) for s in state.values())
+    print("\nInvariants at the fixpoint (%d edge evaluations, %d shape graphs in total)." % (evals, total))
+    print("Notation: {vars}* marks a cell pointed to by the n-field of a garbage cell; "
+          "-1-> one step, -O-> odd (>=3) steps, -E-> even (>=2) steps, -1|O-> one or odd steps.")
+    for n in prog.nodes:
+        print("  %-6s %s" % (n + ':', fmt_state(state[n])))
     print()
+    
     if errors:
         for e, msg in errors:
             print("ERROR line %d [%s %s %s]: %s" % (e.line, e.src, ' '.join(e.text.split()[1:-1]), e.dst, msg))
         print("\nRESULT: %d problem(s) found." % len(errors))
         return 1
+    
     n_assert = sum(1 for e in prog.edges if e.cmd[0] == 'assert')
     vacuous = sum(1 for e in prog.edges if e.cmd[0] == 'assert' and not state[e.src])
     if vacuous:

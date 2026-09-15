@@ -1,16 +1,3 @@
-#!/usr/bin/env python3
-"""
-Usage:
-    python3 parity.py PROGRAM.txt [--domain disjunctive|pointwise] [--quiet] [--no-invariants]
-
-Comments (lines starting with # or //) are ignored
-
-The program parses the text into a CFG (class Program),
-then walks along the graph and analyzes the program.
-Since the ATF is monotonic and there's finitely many states, it must terminate. 
-
-Exit code: 0 if every assertion is verified, 1 if some assertion may be violated, 2 on usage error.
-"""
 import sys
 import re
 import itertools
@@ -338,47 +325,38 @@ def analyze(prog, dom):
     return state, warnings, iterations
 
 def main(argv):
-    args = [a for a in argv if not a.startswith('--')]
-    opts = [a for a in argv if a.startswith('--')]
-    if len(args) != 1:
+    if len(argv) != 1:
         print(__doc__)
         return 2
-    domain_name = 'disjunctive'
-    for o in opts:
-        if o.startswith('--domain='):
-            domain_name = o.split('=', 1)[1]
-        elif o not in ('--quiet', '--no-invariants'):
-            print("unknown option", o)
-            return 2
-    quiet = '--quiet' in opts
-    show_inv = '--no-invariants' not in opts and not quiet
-    with open(args[0]) as f:
+
+    with open(argv[0]) as f:
         prog = parse_program(f.read())
+    
     for n in prog.dangling:
         print("WARNING: node %s has no incoming edges and is not the entry node %s; "
               "the edges leaving it are unreachable (typo in a label?)" % (n, prog.entry))
-    if domain_name == 'disjunctive':
-        dom = DisjunctiveDomain(prog.vars)
-    elif domain_name == 'pointwise':
-        dom = PointwiseDomain(prog.vars)
-    else:
-        print("unknown domain", domain_name)
-        return 2
+    
+    # Using DisjunctiveDomain directly since it is highly precise and flags are removed
+    dom = DisjunctiveDomain(prog.vars)
     state, warnings, iterations = analyze(prog, dom)
+    
     print("Parity analysis of %s  (domain: %s, %d variables, %d nodes, %d edges, entry %s)" %
-          (args[0], dom.name, len(prog.vars), len(prog.nodes), len(prog.edges), prog.entry))
-    if show_inv:
-        print("\nInvariants at the fixpoint (%d edge evaluations):" % iterations)
-        for n in prog.nodes:
-            print("  %-6s %s" % (n + ':', dom.fmt(state[n])))
+          (argv[0], dom.name, len(prog.vars), len(prog.nodes), len(prog.edges), prog.entry))
+    
+    print("\nInvariants at the fixpoint (%d edge evaluations):" % iterations)
+    for n in prog.nodes:
+        print("  %-6s %s" % (n + ':', dom.fmt(state[n])))
     print()
+    
     if warnings:
         for e, msg in warnings:
             print("WARNING line %d [%s %s %s]: %s" % (e.line, e.src, ' '.join(e.text.split()[1:-1]), e.dst, msg))
         print("\nRESULT: %d assertion(s) could NOT be verified." % len(warnings))
         return 1
+    
     n_assert = sum(1 for e in prog.edges if e.cmd[0] == 'assert')
     vacuous = sum(1 for e in prog.edges if e.cmd[0] == 'assert' and dom.is_bottom(state[e.src]))
+    
     if vacuous:
         print("NOTE: %d assertion(s) lie on unreachable edges and hold vacuously." % vacuous)
     print("RESULT: VERIFIED - all %d assertion(s) hold on every execution." % n_assert)
