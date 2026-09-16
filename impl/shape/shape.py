@@ -491,27 +491,35 @@ def fmt_state(st):
     return "%d graphs:\n" % len(gs) + "\n".join("            " + g.fmt() for g in gs)
 
 def main(argv):
-    if len(argv) != 1:
-        print(__doc__); return 2
+    opts = [a for a in argv if a.startswith('--')]
+    args = [a for a in argv if not a.startswith('--')]
     
-    with open(argv[0]) as f:
+    if len(args) != 1:
+        print("Usage: python script.py <PROGRAM.txt> [--debug]")
+        return 2
+
+    debug = '--debug' in opts
+    
+    with open(args[0]) as f:
         prog = parse_program(f.read())
+        
     for n in prog.dangling:
         print("WARNING: node %s has no incoming edges and is not the entry node %s; "
               "the edges leaving it are unreachable (typo in a label?)" % (n, prog.entry))
     
     state, errors, evals = analyze(prog)
     
-    print("Shape analysis of %s  (%d variables, %d nodes, %d edges, entry %s)" %
-          (argv[0], len(prog.vars), len(prog.nodes), len(prog.edges), prog.entry))
-    
-    total = sum(len(s) for s in state.values())
-    print("\nInvariants at the fixpoint (%d edge evaluations, %d shape graphs in total)." % (evals, total))
-    print("Notation: {vars}* marks a cell pointed to by the n-field of a garbage cell; "
-          "-1-> one step, -O-> odd (>=3) steps, -E-> even (>=2) steps, -1|O-> one or odd steps.")
-    for n in prog.nodes:
-        print("  %-6s %s" % (n + ':', fmt_state(state[n])))
-    print()
+    if debug:
+        print("Shape analysis of %s  (%d variables, %d nodes, %d edges, entry %s)" %
+              (args[0], len(prog.vars), len(prog.nodes), len(prog.edges), prog.entry))
+        
+        total = sum(len(s) for s in state.values())
+        print("\nInvariants at the fixpoint (%d edge evaluations, %d shape graphs in total)." % (evals, total))
+        print("Notation: {vars}* marks a cell pointed to by the n-field of a garbage cell; "
+              "-1-> one step, -O-> odd (>=3) steps, -E-> even (>=2) steps, -1|O-> one or odd steps.")
+        for n in prog.nodes:
+            print("  %-6s %s" % (n + ':', fmt_state(state[n])))
+        print()
     
     if errors:
         for e, msg in errors:
@@ -521,6 +529,7 @@ def main(argv):
     
     n_assert = sum(1 for e in prog.edges if e.cmd[0] == 'assert')
     vacuous = sum(1 for e in prog.edges if e.cmd[0] == 'assert' and not state[e.src])
+    
     if vacuous:
         print("NOTE: %d assertion(s) lie on unreachable edges and hold vacuously." % vacuous)
     print("RESULT: VERIFIED - memory safe, no cycles, no sharing, and all %d assertion(s) hold." % n_assert)

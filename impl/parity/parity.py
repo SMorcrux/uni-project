@@ -325,11 +325,16 @@ def analyze(prog, dom):
     return state, warnings, iterations
 
 def main(argv):
-    if len(argv) != 1:
-        print(__doc__)
+    opts = [a for a in argv if a.startswith('--')]
+    args = [a for a in argv if not a.startswith('--')]
+    
+    if len(args) != 1:
+        print("Usage: python script.py <PROGRAM.txt> [--debug]")
         return 2
 
-    with open(argv[0]) as f:
+    debug = '--debug' in opts
+
+    with open(args[0]) as f:
         prog = parse_program(f.read())
     
     for n in prog.dangling:
@@ -340,13 +345,14 @@ def main(argv):
     dom = DisjunctiveDomain(prog.vars)
     state, warnings, iterations = analyze(prog, dom)
     
-    print("Parity analysis of %s  (domain: %s, %d variables, %d nodes, %d edges, entry %s)" %
-          (argv[0], dom.name, len(prog.vars), len(prog.nodes), len(prog.edges), prog.entry))
-    
-    print("\nInvariants at the fixpoint (%d edge evaluations):" % iterations)
-    for n in prog.nodes:
-        print("  %-6s %s" % (n + ':', dom.fmt(state[n])))
-    print()
+    if debug:
+        print("Parity analysis of %s  (domain: %s, %d variables, %d nodes, %d edges, entry %s)" %
+              (args[0], dom.name, len(prog.vars), len(prog.nodes), len(prog.edges), prog.entry))
+        
+        print("\nInvariants at the fixpoint (%d edge evaluations):" % iterations)
+        for n in prog.nodes:
+            print("  %-6s %s" % (n + ':', dom.fmt(state[n])))
+        print()
     
     if warnings:
         for e, msg in warnings:
